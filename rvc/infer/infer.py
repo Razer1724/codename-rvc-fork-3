@@ -25,6 +25,7 @@ from pedalboard import (
 
 now_dir = os.getcwd()
 sys.path.append(now_dir)
+original_torch_load = torch.load
 
 from rvc.infer.pipeline import Pipeline as VC
 from rvc.lib.utils import load_audio_infer, load_embedding
@@ -43,6 +44,11 @@ class VoiceConverter:
     A class for performing voice conversion using the Retrieval-Based Voice Conversion (RVC) method.
     """
 
+    def custom_torch_load(f, *args, **kwargs):
+        return original_torch_load(f, *args, **kwargs)
+
+    torch.load = custom_torch_load
+
     def __init__(self):
         """
         Initializes the VoiceConverter with default configuration, and sets up models and parameters.
@@ -60,6 +66,8 @@ class VoiceConverter:
         self.n_spk = None  # Number of speakers in the model
         self.use_f0 = None  # Whether the model uses F0
         self.loaded_model = None
+        self.uvcp_index_data = None
+
 
     def load_hubert(self, embedder_model: str, embedder_model_custom: str = None):
         """
@@ -307,6 +315,9 @@ class VoiceConverter:
                     f0_autotune=f0_autotune,
                     f0_autotune_strength=f0_autotune_strength,
                     f0_file=f0_file,
+                    index_data=self.uvcp_index_data,
+                    uvcp_index=self.uvcp_index,
+                    uvcp_big_npy=self.uvcp_big_npy,
                 )
                 converted_chunks.append(audio_opt)
                 if split_audio:
@@ -414,23 +425,27 @@ class VoiceConverter:
             os.remove(os.path.join(now_dir, "assets", "infer_pid.txt"))
 
     def get_vc(self, weight_root, sid):
-        """
-        Loads the voice conversion model and sets up the pipeline.
-
-        Args:
-            weight_root (str): Path to the model weights.
-            sid (int): Speaker ID.
-        """
-        if sid == "" or sid == []:
-            self.cleanup_model()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
         if not self.loaded_model or self.loaded_model != weight_root:
-            self.load_model(weight_root)
-            if self.cpt is not None:
+            loaded_data = torch.load(weight_root, map_location="cpu")
+            
+            if isinstance(loaded_data, dict) and 'model_state' in loaded_data:
+                self.cpt = loaded_data['model_state']
+                if 'index_data' in loaded_data:
+                    try:
+                        self.uvcp_index = faiss.deserialize_index(loaded_data['index_data'])
+                        self.uvcp_big_npy = self.uvcp_index.reconstruct_n(0, self.uvcp_index.ntotal)
+                    except Exception:
+                        self.uvcp_index = None
+                        self.uvcp_big_npy = None
+            else:
+                self.cpt = loaded_data
+                self.uvcp_index = None
+                self.uvcp_big_npy = None
+
+            if self.cpt:
                 self.setup_network()
                 self.setup_vc_instance()
+            
             self.loaded_model = weight_root
 
     def cleanup_model(self):
