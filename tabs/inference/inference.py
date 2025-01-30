@@ -57,7 +57,7 @@ names = [
     for root, _, files in os.walk(model_root_relative, topdown=False)
     for file in files
     if (
-        file.endswith((".pth", ".onnx"))
+        file.endswith((".pth", ".onnx", ".uvcp"))
         and not (file.startswith("G_") or file.startswith("D_"))
     )
 ]
@@ -186,7 +186,7 @@ def change_choices(model):
         for root, _, files in os.walk(model_root_relative, topdown=False)
         for file in files
         if (
-            file.endswith((".pth", ".onnx"))
+            file.endswith((".pth", ".onnx", ".uvcp"))
             and not (file.startswith("G_") or file.startswith("D_"))
         )
     ]
