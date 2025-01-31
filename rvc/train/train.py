@@ -22,6 +22,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
+from optimizer_loader import load_optimizer, create_optimizer_config
 
 from torch.nn.utils import clip_grad_norm_
 clip_grad_norm_ = torch.nn.utils.clip_grad_norm_
@@ -78,9 +79,11 @@ save_every_weights = strtobool(sys.argv[10])
 cache_data_in_gpu = strtobool(sys.argv[11])
 use_warmup = strtobool(sys.argv[12])
 warmup_duration = int(sys.argv[13])
-cleanup = strtobool(sys.argv[14])
-vocoder = sys.argv[15]
-use_checkpointing = strtobool(sys.argv[16])
+optimizer_name = sys.argv[14] if len(sys.argv) > 17 else "RAdam"
+cleanup = strtobool(sys.argv[15])
+vocoder = sys.argv[16]
+use_checkpointing = strtobool(sys.argv[17])
+
 
 current_dir = os.getcwd()
 experiment_dir = os.path.join(current_dir, "logs", model_name)
@@ -185,6 +188,8 @@ def verify_checkpoint_shapes(checkpoint_path, model):
 
 
 def main():
+    print(f"Selected optimizer: {optimizer_name}")
+
     """
     Main function to start the training process.
     """
@@ -410,6 +415,8 @@ def run(
         config.model.use_spectral_norm, use_checkpointing=use_checkpointing
     )
 
+    
+
     if torch.cuda.is_available():
         net_g = net_g.cuda(device_id)
         net_d = net_d.cuda(device_id)
@@ -417,22 +424,20 @@ def run(
         net_g.to(device)
         net_d.to(device)
 
-    optim_g = torch.optim.RAdam(
-        net_g.parameters(),
-        lr = 1e-4, # config.train.learning_rate,
-        betas = (0.8, 0.99), # config.train.betas,
-        eps = 1e-8, # config.train.eps,
-        weight_decay=0,
-        decoupled_weight_decay=True, # Matches og RAdam paper + mirrors AdamW's behavior.
-    )
-    optim_d = torch.optim.RAdam(
-        net_d.parameters(),
-        lr = 1e-4, # config.train.learning_rate,
-        betas = (0.8, 0.99), # config.train.betas,
-        eps = 1e-8, # config.train.eps,
-        weight_decay=0,
-        decoupled_weight_decay=True, # Matches og RAdam paper + mirrors AdamW's behavior.
-    )
+    optimizer_config = create_optimizer_config(optimizer_name)
+
+    try:
+        optim_g = load_optimizer(optimizer_name, net_g.parameters(), **optimizer_config)
+        optim_d = load_optimizer(optimizer_name, net_d.parameters(), **optimizer_config)
+        if rank == 0:
+            print(f"Successfully loaded optimizer: {optimizer_name}")
+            print(f"Optimizer configuration: {optimizer_config}")
+    except Exception as e:
+        print(f"Error loading optimizer {optimizer_name}: {str(e)}")
+        print("Falling back to RAdam optimizer...")
+        fallback_config = create_optimizer_config("RAdam")
+        optim_g = load_optimizer("RAdam", net_g.parameters(), **fallback_config)
+        optim_d = load_optimizer("RAdam", net_d.parameters(), **fallback_config)
 
 
     fn_mel_loss = MultiScaleMelSpectrogramLoss(sample_rate=sample_rate)
