@@ -704,6 +704,21 @@ def train_tab():
                             info="Set the maximum number of epochs you want the warmup phase to last for. For small datasets you can try anywhere from 2 to 10. Alternatively, follow the ' 5–10% of the total epochs ' rule ",
                             interactive=True,
                         )
+                use_optimizer_choice = gr.Checkbox(
+                    label="Optimizer swap",
+                    info="Enables the choice of changing the optimizer RVC uses. Leaving this off makes RVC use the default optimizer, which is RAdam.",
+                    value=False,
+                    interactive=True,
+                )
+                with gr.Column(visible=False) as optimizer_setting:
+                    with gr.Accordion("Optimizer Settings"):
+                        optimizer_name = gr.Dropdown(
+                            label=i18n("Optimizer"),
+                            info="Select the optimizer for training. Different optimizers can affect the training speed and model performance.",
+                            choices=["RAdam", "AdaBelief", "SophiaG"],  # Add more optimizers as needed
+                            value="RAdam",  # Default optimizer
+                            interactive=True,
+                )   
                 index_algorithm = gr.Radio(
                     label=i18n("Index Algorithm"),
                     info=i18n(
@@ -753,6 +768,7 @@ def train_tab():
                     gpu,
                     use_warmup,
                     warmup_duration,
+                    optimizer_name,
                     pretrained,
                     cleanup,
                     index_algorithm,
@@ -761,7 +777,7 @@ def train_tab():
                     g_pretrained_path,
                     d_pretrained_path,
                     vocoder,
-                    use_checkpointing,
+                    use_checkpointing, 
                 ],
                 outputs=[train_output_info],
             )
@@ -971,6 +987,11 @@ def train_tab():
                 fn=toggle_visible,
                 inputs=[use_warmup],
                 outputs=[warmup_settings],
+            )
+            use_optimizer_choice.change(
+                fn=toggle_visible,
+                inputs=[use_optimizer_choice],
+                outputs=[optimizer_setting],
             )
             multiple_gpu.change(
                 fn=toggle_visible,
